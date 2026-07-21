@@ -1,0 +1,18 @@
+name: parse-serialize-roundtrip
+description: Parse a stylesheet to its JSON AST, then serialize that AST straight back to CSS — proves ParseStylesheet's ast_json output composes directly as SerializeStylesheet's ast_json input.
+nodes:
+    - alias: parsed
+      package: christiangeorgelucas/css-tools@0.1.0
+      node: ParseStylesheet
+      col: 0
+      row: 0
+    - alias: serialized
+      package: christiangeorgelucas/css-tools@0.1.0
+      node: SerializeStylesheet
+      col: 1
+      row: 0
+edges:
+    - from: parsed
+      to: serialized
+      adapter:
+        ast_json: ast_json

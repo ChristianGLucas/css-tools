@@ -1,0 +1,322 @@
+// Data contracts for christiangeorgelucas/css-tools — deterministic CSS
+// stylesheet parsing, inspection, transformation, and minification, powered
+// by css-tree (MIT).
+//
+// The canonical envelope is `Stylesheet`: raw CSS source text in, resulting
+// CSS source text out. MinifyStylesheet and PrettifyStylesheet consume AND
+// produce it (pure text->text transforms that compose directly with each
+// other); every inspection node (Parse/Validate/Extract*) also accepts it as
+// input (only `css` is meaningful there; `error` is ignored on input).
+//
+// Every node's ONLY hard-failure mode is a structured `error` field, set on
+// oversized input or an internal fault; nodes never throw. Recoverable CSS
+// syntax problems (malformed selectors, unknown properties, etc.) are NOT
+// hard failures for most nodes — css-tree parses tolerantly and best-effort,
+// same as a real browser, so e.g. ExtractSelectors on slightly-malformed CSS
+// still returns whatever it could parse. ValidateStylesheet is the one node
+// whose whole job is to surface those problems instead of shrugging past them.
+//
+// The algorithmically hard part — tokenizing and parsing CSS syntax, walking
+// the AST, and re-serializing it — is entirely owned by css-tree; this
+// package adds input bounds, JSON/proto shaping, and a small amount of
+// spec-defined glue (selector-specificity arithmetic, named-color matching)
+// on top, each backed by an independent-oracle test.
+
+syntax = "proto3";
+
+package christiangeorgelucas.css_tools;
+
+// The canonical CSS-text envelope. `css` is the stylesheet source text on
+// input; on output (Minify/Prettify) it is the resulting stylesheet text.
+message Stylesheet {
+  // The CSS source text (UTF-8). Rejected with a structured
+  // "input exceeds N bytes" error above 5 MiB (5,000,000 bytes) — checked
+  // on the raw byte length before any parsing is attempted.
+  string css = 1;
+  // Set (non-empty) iff the operation failed; css is empty in that case.
+  // Meaningless (ignored) when this message is used as a node's input.
+  string error = 2;
+}
+
+// One syntax error collected during a tolerant parse, with its 1-based
+// source location.
+message CssSyntaxError {
+  // Human-readable description, e.g. "Colon is expected".
+  string message = 1;
+  uint32 line = 2;
+  uint32 column = 3;
+}
+
+// Output of ParseStylesheet.
+message ParseResult {
+  // The parsed stylesheet as JSON, in css-tree's own plain-object AST form
+  // ({"type": "StyleSheet", "children": [...]}, recursively). Feed this
+  // straight into SerializeStylesheet.ast_json to round-trip, with or
+  // without editing it in between. Empty when `error` is set.
+  string ast_json = 1;
+  // Syntax errors collected during a best-effort, error-tolerant parse. A
+  // non-empty list here does NOT set `error` — the parse still succeeded
+  // and ast_json is still populated from whatever css-tree could recover,
+  // exactly like a browser's own tolerant CSS parsing.
+  repeated CssSyntaxError syntax_errors = 2;
+  // Set only for a hard failure (oversized input or an internal fault) —
+  // never for ordinary recoverable syntax errors, which land in
+  // syntax_errors instead. ast_json is empty whenever this is set.
+  string error = 3;
+}
+
+// Input for SerializeStylesheet.
+message AstInput {
+  // A stylesheet AST as JSON, in css-tree's plain-object form — typically
+  // ParseStylesheet's ast_json, unmodified or edited by the caller. Rejected
+  // with a structured error above 5 MiB or if it is not a well-formed
+  // css-tree AST (unknown node `type`, wrong shape).
+  string ast_json = 1;
+}
+
+// Input for PrettifyStylesheet.
+message PrettifyRequest {
+  // The CSS source text to reformat. Same 5 MiB cap as Stylesheet.css.
+  string css = 1;
+  // Spaces per indent level. Defaults to 2 when omitted or <= 0.
+  int32 indent = 2;
+}
+
+// Output of ValidateStylesheet.
+message ValidateResult {
+  // True iff the stylesheet has zero syntax_errors AND zero
+  // structural_errors. False if either is non-empty, or if `error` is set.
+  bool valid = 1;
+  // Syntax-level parse errors with source location (same as ParseResult's).
+  repeated CssSyntaxError syntax_errors = 2;
+  // Grammar mismatches css-tree's lexer finds: every declaration's value
+  // checked against its property's formal CSS grammar (e.g. "color: 10px"),
+  // and every at-rule prelude checked against its at-rule's grammar (e.g.
+  // "@media derp"). Custom properties (--x) are untyped by design and never
+  // reported here. One entry per mismatch found, in document order; no
+  // source line/column (the lexer does not report one), only a description.
+  repeated string structural_errors = 3;
+  // Set only for a hard failure (oversized input, internal fault) — never
+  // for the syntax/structural problems the validation itself is reporting.
+  string error = 4;
+}
+
+// One selector found by ExtractSelectors.
+message SelectorEntry {
+  // The selector's own source text, e.g. ".foo > .bar:hover".
+  string selector = 1;
+  // 0-based index of the owning rule in the stylesheet's rule order,
+  // matching RuleEntry.index from ListRules — join on this to recover the
+  // rule's declarations.
+  int32 rule_index = 2;
+}
+message SelectorList {
+  repeated SelectorEntry selectors = 1;
+  string error = 2;
+}
+
+// One declaration found by ExtractDeclarations or nested inside a RuleEntry
+// / AtRuleEntry.
+message DeclarationEntry {
+  string property = 1;
+  // The declaration's value, exactly as written (source text), e.g.
+  // "10px solid red" or "var(--gap, 8px)".
+  string value = 2;
+  // True iff the declaration ends in "!important".
+  bool important = 3;
+  // 0-based index of the owning rule, as in SelectorEntry.rule_index. -1
+  // when the declaration is not inside a top-level style rule (e.g. inside
+  // an @font-face or @page block — see AtRuleEntry.declarations instead).
+  int32 rule_index = 4;
+}
+message DeclarationList {
+  repeated DeclarationEntry declarations = 1;
+  string error = 2;
+}
+
+// One style rule found by ListRules.
+message RuleEntry {
+  // 0-based position among top-level and nested style rules, in source
+  // order — stable across calls for the same input, used as the join key
+  // by SelectorEntry.rule_index and DeclarationEntry.rule_index.
+  int32 index = 1;
+  // All selectors in this rule's selector list, joined with ", " — the
+  // rule's prelude source text, e.g. ".a, .b:hover".
+  string selector = 2;
+  repeated DeclarationEntry declarations = 3;
+}
+message RuleList {
+  repeated RuleEntry rules = 1;
+  string error = 2;
+}
+
+// One at-rule found by ExtractAtRules.
+message AtRuleEntry {
+  // 0-based position among at-rules, in source order.
+  int32 index = 1;
+  // The at-rule's name without the "@", e.g. "media", "import", "font-face",
+  // "keyframes", "supports", "charset".
+  string name = 2;
+  // The at-rule's prelude source text, e.g. "(min-width: 100px)" for
+  // @media, or "\"foo.css\"" for @import. Empty when the at-rule has no
+  // prelude (e.g. bare "@font-face {...}").
+  string prelude = 3;
+  // The at-rule's block content re-serialized as CSS, for at-rules whose
+  // block holds nested RULES (@media, @supports, @keyframes). Empty for a
+  // statement-only at-rule (@import, @charset, @namespace) or one whose
+  // block holds plain declarations instead (see `declarations`).
+  string body_css = 4;
+  // Declarations directly inside the at-rule's block, for at-rules whose
+  // block is a plain declaration list (@font-face, @page). Empty for a
+  // rule-list block (@media, @keyframes) — use body_css for those instead.
+  repeated DeclarationEntry declarations = 5;
+}
+message AtRuleList {
+  repeated AtRuleEntry at_rules = 1;
+  string error = 2;
+}
+
+// One color use found by ExtractColors.
+message ColorEntry {
+  // The color's own source text exactly as written, e.g. "#ff0000",
+  // "rgba(0, 0, 0, .5)", "red", "currentcolor".
+  string value = 1;
+  // How it was written: "hex" (#... hash token), "function" (rgb()/hsl()/
+  // hwb()/lab()/lch()/oklab()/oklch()/color()/color-mix()), or "keyword"
+  // (a CSS named color, "transparent", or "currentcolor").
+  string format = 2;
+  // The declaration property it was found in (e.g. "color", "border"). Empty
+  // if found outside a declaration value (rare: inside a selector attribute
+  // value or at-rule prelude).
+  string property = 3;
+  // 0-based owning-rule index, as in SelectorEntry.rule_index; -1 if not
+  // inside a top-level style rule.
+  int32 rule_index = 4;
+}
+message ColorList {
+  repeated ColorEntry colors = 1;
+  string error = 2;
+}
+
+// One custom property (CSS variable) found by ExtractCustomProperties,
+// merging every declaration and every var() reference of the same name.
+message CustomPropertyEntry {
+  // The custom property name, including its leading "--", e.g. "--gap".
+  string name = 1;
+  // True iff declared at least once (`--gap: value;`) anywhere in the sheet.
+  bool declared = 2;
+  // True iff referenced at least once (`var(--gap, ...)`) anywhere.
+  bool referenced = 3;
+  // The value of the LAST declaration of this name in source order (source
+  // order is what the cascade uses to break equal-specificity ties). Empty
+  // if never declared.
+  string last_declared_value = 4;
+  int32 declaration_count = 5;
+  int32 reference_count = 6;
+}
+message CustomPropertyList {
+  repeated CustomPropertyEntry properties = 1;
+  string error = 2;
+}
+
+// Output of ExtractFontFamilies.
+message FontFamilyList {
+  // Every distinct font-family name found in `font-family` declaration
+  // values (each comma-separated entry, quotes stripped, multi-word
+  // unquoted names rejoined), in first-seen order. Generic keywords (e.g.
+  // "sans-serif", "inherit") are included as written. Does NOT parse the
+  // `font` shorthand — see ExtractFontFamilies' description.
+  repeated string families = 1;
+  string error = 2;
+}
+
+// One url() reference found by ExtractUrls.
+message UrlEntry {
+  // The URL exactly as written inside url(...), quotes stripped.
+  string url = 1;
+  // Where it was found: the declaration property name (e.g.
+  // "background-image", "src"), or the at-rule name (e.g. "import") for a
+  // url() in an at-rule prelude.
+  string context = 2;
+  // 0-based owning-rule index, as in SelectorEntry.rule_index; -1 if not
+  // inside a top-level style rule (e.g. inside @import or @font-face).
+  int32 rule_index = 3;
+}
+message UrlList {
+  repeated UrlEntry urls = 1;
+  string error = 2;
+}
+
+// Input for ParseSelector.
+message SelectorInput {
+  // A selector or comma-separated selector list, e.g.
+  // "div.foo#bar:hover, .baz::before". Capped at 20,000 bytes.
+  string selector = 1;
+}
+
+// One simple selector or combinator within a parsed selector.
+message SelectorComponent {
+  // One of: "type" (tag name), "universal" ("*"), "class", "id",
+  // "attribute", "pseudo-class", "pseudo-element", "nesting" ("&"),
+  // "combinator" (descendant/child/sibling).
+  string kind = 1;
+  // The component's own source text, e.g. ".foo", "#bar", ":hover", ">".
+  string text = 2;
+}
+
+// A selector's specificity, per the CSS Selectors spec's (a, b, c) triple:
+// compare lexicographically, a first. :where(...) contributes 0 to any
+// column; :is()/:not()/:has() contribute their most specific argument's
+// specificity (computed recursively) rather than a flat b=1.
+message Specificity {
+  // Count of ID selectors.
+  int32 a = 1;
+  // Count of class selectors, attribute selectors, and pseudo-classes.
+  int32 b = 2;
+  // Count of type selectors and pseudo-elements.
+  int32 c = 3;
+}
+
+// One selector out of a (possibly comma-separated) parsed selector list.
+message ParsedSelector {
+  // This selector's own source text (without the others in the list).
+  string text = 1;
+  repeated SelectorComponent components = 2;
+  Specificity specificity = 3;
+}
+
+// Output of ParseSelector.
+message SelectorResult {
+  // One entry per comma-separated selector in the input, in order.
+  repeated ParsedSelector selectors = 1;
+  // Set on a hard parse failure (oversized input, unparseable selector
+  // syntax). selectors is empty when this is set.
+  string error = 2;
+}
+
+// Input for ParseValue.
+message ValueInput {
+  // A single declaration value (the part after the colon), e.g.
+  // "10px solid rgba(255,0,0,.5)". Capped at 20,000 bytes.
+  string value = 1;
+}
+
+// One top-level component of a parsed value.
+message ValueToken {
+  // css-tree's own AST node type for this component, e.g. "Dimension",
+  // "Identifier", "Function", "String", "Hash", "Percentage", "Number",
+  // "Operator", "Url", "Raw".
+  string type = 1;
+  // The token's own source text, e.g. "10px", "solid", "rgba(255,0,0,.5)".
+  // For a Function token this includes its full argument list.
+  string text = 2;
+}
+
+// Output of ParseValue.
+message ValueResult {
+  // Top-level components of the value, in order (a Function's own arguments
+  // are NOT flattened into this list — they are part of that Function
+  // token's `text`; re-parse it with ParseValue to descend into it).
+  repeated ValueToken tokens = 1;
+  string error = 2;
+}

@@ -1,0 +1,173 @@
+name: christiangeorgelucas/css-tools
+version: 0.1.0
+language: typescript
+description: Composable Axiom CSS-stylesheet nodes over a single Stylesheet envelope — parse to a JSON AST, serialize an AST back to CSS, minify, prettify, validate against the CSS spec with error locations, and extract selectors, declarations, rules, at-rules, colors, custom properties, font families, and url() references. Also parses a single selector into its structured components with computed specificity, and a single declaration value into its component tokens. Wraps css-tree (MIT), a fast, spec-compliant CSS parser/serializer/walker; mdn-data (CC0-1.0) and source-map-js (BSD-3-Clause) are its only transitive dependencies. Offline, deterministic, pure text/AST in -> text/AST out; malformed CSS parses tolerantly (best-effort, like a browser) with syntax errors reported rather than a crash; oversized input is rejected with a structured error.
+author: Christian George Lucas
+license: MIT
+tags:
+    - css
+    - stylesheet
+    - parser
+    - ast
+    - minify
+    - prettify
+    - selector
+    - specificity
+    - css-tree
+    - static-analysis
+nodes:
+    - name: ParseStylesheet
+      input: Stylesheet
+      output: ParseResult
+      description: >-
+        Parse a CSS stylesheet into a structured JSON AST (css-tree's own
+        plain-object form: {type, children:[...]} recursively) — feed
+        ast_json straight into SerializeStylesheet to round-trip, with or
+        without editing it. Parsing is tolerant and best-effort like a
+        browser's: malformed CSS still yields an AST plus syntax_errors
+        (each with a 1-based line/column), never a hard failure. error is
+        set only for a genuine failure (oversized input, internal fault).
+    - name: SerializeStylesheet
+      input: AstInput
+      output: Stylesheet
+      description: >-
+        Serialize a css-tree plain-object AST (as produced by
+        ParseStylesheet's ast_json, unmodified or edited) back into CSS
+        source text. A malformed or unrecognized AST shape returns a
+        structured error rather than throwing.
+    - name: MinifyStylesheet
+      input: Stylesheet
+      output: Stylesheet
+      description: >-
+        Minify a stylesheet: parse then re-serialize, which drops every
+        comment and all non-significant whitespace (css-tree's AST does not
+        retain original formatting, so re-serializing it is already the
+        minified form — no separate minifier pass is needed). Safe and
+        lossless for values/selectors; does not rename or merge selectors.
+        Malformed CSS still minifies whatever parsed (best-effort); only a
+        hard failure (oversized input) sets error.
+    - name: PrettifyStylesheet
+      input: PrettifyRequest
+      output: Stylesheet
+      description: >-
+        Reformat a stylesheet with consistent indentation, one declaration
+        per line, and a blank line between top-level rules — parses then
+        re-serializes with the package's own indenting printer built on
+        css-tree's AST walker. `indent` sets spaces per level (default 2).
+        Malformed CSS still prettifies whatever parsed (best-effort); only a
+        hard failure sets error.
+    - name: ValidateStylesheet
+      input: Stylesheet
+      output: ValidateResult
+      description: >-
+        Validate a stylesheet against the CSS spec: `valid` is true only
+        when there are zero syntax_errors (tokenizer/parser-level, each with
+        a 1-based line/column) AND zero structural_errors (css-tree's lexer
+        checking every declaration's value against its property's formal
+        CSS grammar, e.g. "color: 10px", and every at-rule prelude against
+        its grammar, e.g. "@media derp"). Declarations using custom
+        properties (--x) or containing var()/env() are skipped — their
+        value is only known at compute time, so there is nothing to
+        statically check. error is set only for a hard failure (oversized
+        input), never for the syntax/structural problems this node exists
+        to report.
+    - name: ExtractSelectors
+      input: Stylesheet
+      output: SelectorList
+      description: >-
+        List every selector in the stylesheet (each comma-separated selector
+        in a rule's prelude counted individually), with its own source text
+        and the 0-based index of its owning rule — join rule_index against
+        ListRules' RuleEntry.index to recover that rule's declarations.
+    - name: ExtractDeclarations
+      input: Stylesheet
+      output: DeclarationList
+      description: >-
+        List every property/value declaration across all style rules (source
+        text order), each with its property, value (source text), the
+        !important flag, and its owning rule's 0-based index. Declarations
+        inside at-rule blocks (e.g. @font-face) are NOT included here — see
+        ExtractAtRules' AtRuleEntry.declarations instead.
+    - name: ListRules
+      input: Stylesheet
+      output: RuleList
+      description: >-
+        List every top-level and nested style rule with its full selector
+        text (comma-joined) and its own declarations, each with a stable
+        0-based index usable as the join key for ExtractSelectors and
+        ExtractDeclarations' rule_index fields.
+    - name: ExtractAtRules
+      input: Stylesheet
+      output: AtRuleList
+      description: >-
+        List every at-rule (@media, @import, @font-face, @keyframes,
+        @supports, @charset, @namespace, @page, and any other) with its
+        name, prelude source text, and body — either re-serialized nested
+        CSS (body_css, for @media/@supports/@keyframes) or a flat
+        declaration list (declarations, for @font-face/@page), whichever
+        applies.
+    - name: ExtractColors
+      input: Stylesheet
+      output: ColorList
+      description: >-
+        List every color value used in a declaration: hex (#fff, #ff0000),
+        function (rgb/rgba/hsl/hsla/hwb/lab/lch/oklab/oklch/color/
+        color-mix), and named-keyword colors (the 148 CSS Color Module
+        keywords, plus "transparent" and "currentcolor") — each with its own
+        source text, which declaration property it was found in, and its
+        owning rule's index. Lexical, not resolved: a var()-referenced color
+        is reported at its var()-using declaration only if that declaration's
+        own text also happens to contain a literal color.
+    - name: ExtractCustomProperties
+      input: Stylesheet
+      output: CustomPropertyList
+      description: >-
+        List every custom property (CSS variable) name declared
+        (--name: value) and/or referenced (var(--name, ...)) anywhere in the
+        stylesheet, merged into one entry per name with declared/referenced
+        flags, counts, and the last declaration's value (source order — what
+        the cascade uses to break equal-specificity ties).
+    - name: ExtractFontFamilies
+      input: Stylesheet
+      output: FontFamilyList
+      description: >-
+        List every distinct font-family name found in font-family
+        declaration values (each comma-separated entry, quotes stripped and
+        multi-word unquoted names like "Helvetica Neue" rejoined), in
+        first-seen order across the stylesheet. Generic keywords
+        (sans-serif, monospace, inherit, etc.) are included as written —
+        not distinguished from named families. Deliberately does NOT parse
+        the `font` shorthand: its family segment's position depends on the
+        preceding style/weight/size/line-height tokens, and a heuristic
+        gets it right most of the time but not reliably — see the
+        `font-family` longhand for a stylesheet using the shorthand
+        instead, or ParseValue on the raw `font` value.
+    - name: ExtractUrls
+      input: Stylesheet
+      output: UrlList
+      description: >-
+        List every url(...) reference in the stylesheet — background/list-
+        style/cursor images, @font-face src, @import targets, and any other
+        — with the URL text (quotes stripped), the declaration property or
+        at-rule name it was found in, and its owning rule's index (-1 when
+        not inside a top-level style rule, e.g. @import/@font-face).
+    - name: ParseSelector
+      input: SelectorInput
+      output: SelectorResult
+      description: >-
+        Parse a selector (or comma-separated selector list) into its
+        structured simple-selectors/combinators and compute each one's CSS
+        specificity as an (a, b, c) triple per the CSS Selectors spec:
+        a = ID count, b = class + attribute + pseudo-class count, c = type +
+        pseudo-element count; :where() contributes 0; :is()/:not()/:has()
+        contribute their most specific argument (computed recursively).
+    - name: ParseValue
+      input: ValueInput
+      output: ValueResult
+      description: >-
+        Tokenize a single declaration value (the part after the colon) into
+        its top-level components — dimensions, identifiers, functions,
+        strings, hashes, percentages, numbers, operators, urls — each with
+        css-tree's own AST node type and its own source text. A function's
+        arguments are not flattened; re-parse a Function token's text to
+        descend into it.
