@@ -38,9 +38,10 @@ function referencesRuntimeValue(value: csstree.CssNode): boolean {
  * to statically check. KNOWN LIMITATION: grammar checking is only as
  * current as css-tree's bundled grammar data (2.3.1) — newer at-rules it
  * does not yet recognize (@container, @scope) come back valid:false with a
- * "Unknown at-rule" structural_error EVEN WHEN the CSS is perfectly valid;
- * this is a false positive on the at-rule itself, not a missed detection of
- * real errors inside it. error is set only for a hard
+ * "Unknown at-rule" structural_error (sometimes alongside an unrelated
+ * spurious syntax_error too) EVEN WHEN the CSS is perfectly valid; this is
+ * a false positive on the at-rule itself, not a missed detection of real
+ * errors inside it. error is set only for a hard
  * failure (oversized input), never for the syntax/structural problems this
  * node exists to report.
  *
