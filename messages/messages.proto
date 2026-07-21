@@ -92,9 +92,14 @@ message ValidateResult {
   // Grammar mismatches css-tree's lexer finds: every declaration's value
   // checked against its property's formal CSS grammar (e.g. "color: 10px"),
   // and every at-rule prelude checked against its at-rule's grammar (e.g.
-  // "@media derp"). Custom properties (--x) are untyped by design and never
-  // reported here. One entry per mismatch found, in document order; no
-  // source line/column (the lexer does not report one), only a description.
+  // "@media derp derp"). Custom properties (--x) and values referencing
+  // var()/env() are untyped/unresolvable and never reported here. KNOWN
+  // LIMITATION: an at-rule css-tree's bundled grammar (2.3.1) does not yet
+  // recognize (@container, @scope) is reported here as "Unknown at-rule"
+  // EVEN WHEN the CSS is perfectly valid — a false positive on the at-rule
+  // itself, not a missed detection of real errors inside it. One entry per
+  // mismatch found, in document order; no source line/column (the lexer
+  // does not report one), only a description.
   repeated string structural_errors = 3;
   // Set only for a hard failure (oversized input, internal fault) — never
   // for the syntax/structural problems the validation itself is reporting.

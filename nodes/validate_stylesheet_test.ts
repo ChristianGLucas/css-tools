@@ -30,6 +30,35 @@ describe('ValidateStylesheet', () => {
     expect(result.getStructuralErrorsList()[0]).toContain('@media');
   });
 
+  it('does NOT flag a single unknown media-feature-like word alone (syntactically valid, just never matches)', () => {
+    const input = new Stylesheet();
+    input.setCss('@media derp { .a { color: red } }');
+    const result = validateStylesheet(ctx, input);
+    expect(result.getValid()).toBe(true);
+  });
+
+  it('KNOWN LIMITATION: false-positives valid:false on @container/@scope, which css-tree 2.3.1\'s bundled ' +
+    'grammar does not yet recognize — this is a recorded, deliberate gap (see ValidateStylesheet\'s ' +
+    'description), not silent breakage: the at-rule itself is flagged "Unknown at-rule" even though the ' +
+    'CSS is perfectly valid modern syntax', () => {
+    const container = new Stylesheet();
+    container.setCss('@container (min-width: 400px) { .a { color: red; } }');
+    const containerResult = validateStylesheet(ctx, container);
+    expect(containerResult.getValid()).toBe(false);
+    expect(containerResult.getStructuralErrorsList().join(' ')).toContain('Unknown at-rule');
+
+    const scope = new Stylesheet();
+    scope.setCss('@scope (.a) to (.b) { .c { color: red; } }');
+    const scopeResult = validateStylesheet(ctx, scope);
+    expect(scopeResult.getValid()).toBe(false);
+    expect(scopeResult.getStructuralErrorsList().join(' ')).toContain('Unknown at-rule');
+
+    // @layer, by contrast, IS recognized — not every newer at-rule is affected.
+    const layer = new Stylesheet();
+    layer.setCss('@layer base { .a { color: red; } }');
+    expect(validateStylesheet(ctx, layer).getValid()).toBe(true);
+  });
+
   it('reports a syntax error with 1-based line/column for malformed CSS, valid:false', () => {
     const input = new Stylesheet();
     input.setCss('.a { color: red;\n.b { x\n');

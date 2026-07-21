@@ -30,11 +30,19 @@ function referencesRuntimeValue(value: csstree.CssNode): boolean {
  * 1-based line/column) AND zero structural_errors (css-tree's lexer
  * checking every declaration's value against its property's formal CSS
  * grammar, and every at-rule prelude against its at-rule's grammar — e.g.
- * "color: 10px" or "@media derp" are both flagged). Declarations using
- * custom properties (--x) or containing var()/env() are skipped — their
- * value is only known at compute time, so there is nothing to statically
- * check. error is set only for a hard failure (oversized input), never for
- * the syntax/structural problems this node exists to report.
+ * "color: 10px" or "@media derp derp" are both flagged (a single unknown
+ * media-feature-like word alone, e.g. "@media derp", is syntactically valid
+ * per spec — it simply never matches — so it does NOT get flagged).
+ * Declarations using custom properties (--x) or containing var()/env() are
+ * skipped — their value is only known at compute time, so there is nothing
+ * to statically check. KNOWN LIMITATION: grammar checking is only as
+ * current as css-tree's bundled grammar data (2.3.1) — newer at-rules it
+ * does not yet recognize (@container, @scope) come back valid:false with a
+ * "Unknown at-rule" structural_error EVEN WHEN the CSS is perfectly valid;
+ * this is a false positive on the at-rule itself, not a missed detection of
+ * real errors inside it. error is set only for a hard
+ * failure (oversized input), never for the syntax/structural problems this
+ * node exists to report.
  *
  * @param ax - Platform context: ax.log for logging, ax.secrets for secrets.
  */

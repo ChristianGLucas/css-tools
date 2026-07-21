@@ -65,12 +65,16 @@ nodes:
         a 1-based line/column) AND zero structural_errors (css-tree's lexer
         checking every declaration's value against its property's formal
         CSS grammar, e.g. "color: 10px", and every at-rule prelude against
-        its grammar, e.g. "@media derp"). Declarations using custom
+        its grammar, e.g. "@media derp derp"). Declarations using custom
         properties (--x) or containing var()/env() are skipped — their
         value is only known at compute time, so there is nothing to
-        statically check. error is set only for a hard failure (oversized
-        input), never for the syntax/structural problems this node exists
-        to report.
+        statically check. KNOWN LIMITATION: an at-rule css-tree's bundled
+        grammar (2.3.1) does not yet recognize (@container, @scope) comes
+        back valid:false with an "Unknown at-rule" structural_error EVEN
+        WHEN the CSS is perfectly valid — a false positive on the at-rule
+        itself, not a missed detection of real errors inside it.
+        error is set only for a hard failure (oversized input), never for
+        the syntax/structural problems this node exists to report.
     - name: ExtractSelectors
       input: Stylesheet
       output: SelectorList
