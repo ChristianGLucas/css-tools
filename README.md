@@ -6,7 +6,7 @@ CSS parser/serializer/AST-walker/lexer. Its only transitive dependencies are
 [mdn-data](https://github.com/mdn/data) (CC0-1.0) and
 [source-map-js](https://github.com/7rulnik/source-map-js) (BSD-3-Clause).
 
-Built for the [Axiom](https://axiom.dev) marketplace, published under the `christiangeorgelucas` handle.
+Built for the [Axiom](https://axiomide.com) marketplace, published under the `christiangeorgelucas` handle.
 
 ## What's here
 
