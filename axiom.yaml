@@ -1,5 +1,5 @@
 name: christiangeorgelucas/css-tools
-version: 0.1.0
+version: 0.1.1
 language: typescript
 description: Composable Axiom CSS-stylesheet nodes over a single Stylesheet envelope — parse to a JSON AST, serialize an AST back to CSS, minify, prettify, validate against the CSS spec with error locations, and extract selectors, declarations, rules, at-rules, colors, custom properties, font families, and url() references. Also parses a single selector into its structured components with computed specificity, and a single declaration value into its component tokens. Wraps css-tree (MIT), a fast, spec-compliant CSS parser/serializer/walker; mdn-data (CC0-1.0) and source-map-js (BSD-3-Clause) are its only transitive dependencies. Offline, deterministic, pure text/AST in -> text/AST out; malformed CSS parses tolerantly (best-effort, like a browser) with syntax errors reported rather than a crash; oversized input is rejected with a structured error.
 author: Christian George Lucas

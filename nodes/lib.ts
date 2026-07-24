@@ -14,18 +14,6 @@
 
 import * as csstree from 'css-tree';
 
-/** Ceiling for any raw CSS stylesheet input (Stylesheet.css, PrettifyRequest.css,
- * AstInput.ast_json). 5 MiB, well under the ~4 MiB Axiom transport cap's likely
- * output growth from a single input, and far beyond any real stylesheet
- * (the entire minified Bootstrap 5 CSS is under 200 KiB). */
-export const MAX_CSS_BYTES = 5_000_000;
-
-/** Ceiling for a single selector or selector list (ParseSelector.selector). */
-export const MAX_SELECTOR_BYTES = 20_000;
-
-/** Ceiling for a single declaration value (ParseValue.value). */
-export const MAX_VALUE_BYTES = 20_000;
-
 /**
  * Ceiling on bracket/paren/brace nesting depth, checked with a cheap linear
  * scan BEFORE csstree ever parses the input. csstree's parser and its
@@ -41,14 +29,6 @@ export const MAX_VALUE_BYTES = 20_000;
 export const MAX_NESTING_DEPTH = 512;
 
 export class BoundsError extends Error {}
-
-/** Rejects oversized input (by UTF-8 byte length, not JS string length) before
- * it reaches css-tree. */
-export function checkBytes(value: string, field: string, max: number): void {
-  if (Buffer.byteLength(value, 'utf8') > max) {
-    throw new BoundsError(`${field} exceeds ${max} bytes`);
-  }
-}
 
 /** Rejects input whose bracket/paren/brace nesting exceeds MAX_NESTING_DEPTH,
  * via a single linear scan over raw characters (deliberately not
@@ -94,9 +74,8 @@ export interface TolerantParseResult {
 
 /** Parses CSS text tolerantly (best-effort, browser-like error recovery),
  * collecting every syntax error with its 1-based source location instead of
- * throwing. Applies the size + nesting bounds first. */
+ * throwing. Applies the nesting-depth bound first. */
 export function parseTolerant(css: string, field = 'css'): TolerantParseResult {
-  checkBytes(css, field, MAX_CSS_BYTES);
   checkNestingDepth(css, field);
   const errors: SyntaxErrorInfo[] = [];
   const ast = csstree.parse(css, {
@@ -127,14 +106,12 @@ export function parseTolerant(css: string, field = 'css'): TolerantParseResult {
 
 /** Parses a selector or comma-separated selector list (context: 'selectorList'). */
 export function parseSelectorList(selector: string): csstree.CssNode {
-  checkBytes(selector, 'selector', MAX_SELECTOR_BYTES);
   checkNestingDepth(selector, 'selector');
   return csstree.parse(selector, { context: 'selectorList' });
 }
 
 /** Parses a single declaration value (context: 'value'). */
 export function parseValueAst(value: string): csstree.CssNode {
-  checkBytes(value, 'value', MAX_VALUE_BYTES);
   checkNestingDepth(value, 'value');
   return csstree.parse(value, { context: 'value' });
 }
@@ -148,7 +125,6 @@ export function astToJson(ast: csstree.CssNode): string {
  * Throws (caller wraps in try/catch) on malformed JSON or an AST shape
  * css-tree's fromPlainObject rejects. */
 export function jsonToAst(astJson: string, field = 'ast_json'): csstree.CssNode {
-  checkBytes(astJson, field, MAX_CSS_BYTES);
   let plain: unknown;
   try {
     plain = JSON.parse(astJson);

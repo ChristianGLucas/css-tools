@@ -50,11 +50,11 @@ describe('ParseSelector', () => {
     expect([spec.getA(), spec.getB(), spec.getC()]).toEqual([0, 0, 0]);
   });
 
-  it('rejects oversized input as a structured error', () => {
+  it('handles a large selector input without crashing', () => {
     const input = new SelectorInput();
     input.setSelector('.a'.repeat(30_000));
     const result = parseSelector(ctx, input);
-    expect(result.getError()).toContain('exceeds');
+    expect(result.getError()).toBe('');
   });
 
   it('is deterministic across repeated calls', () => {

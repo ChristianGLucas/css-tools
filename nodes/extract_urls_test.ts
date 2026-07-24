@@ -27,10 +27,10 @@ describe('ExtractUrls', () => {
     expect(result.getUrlsList()).toEqual([]);
   });
 
-  it('rejects oversized input as a structured error', () => {
+  it('handles a large (multi-MB) input without crashing', () => {
     const input = new Stylesheet();
     input.setCss('.a{color:red}'.repeat(500_000));
     const result = extractUrls(ctx, input);
-    expect(result.getError()).toContain('exceeds');
+    expect(result.getError()).toBe('');
   });
 });

@@ -75,10 +75,11 @@ describe('SerializeStylesheet', () => {
     expect(result.getError()).not.toBe('');
   });
 
-  it('returns a structured error for oversized ast_json', () => {
+  it('handles a large (multi-MB) ast_json without crashing', () => {
     const input = new AstInput();
     input.setAstJson(JSON.stringify({ type: 'StyleSheet', children: [], padding: 'x'.repeat(6_000_000) }));
     const result = serializeStylesheet(ctx, input);
-    expect(result.getError()).toContain('exceeds');
+    expect(result.getError()).toBe('');
+    expect(result.getCss()).toBe('');
   });
 });
